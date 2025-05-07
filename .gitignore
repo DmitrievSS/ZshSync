@@ -40,4 +40,5 @@ ENV/
 ~
 ~/
 ~/*
-.zsh_history_git/ 
+.zsh_history_git/
+config.yaml 
