@@ -45,7 +45,7 @@ def main():
     if args.restart:
         restart_daemon(config)
     elif args.stop:
-        stop_daemon()
+        stop_daemon(config)
     elif args.clear_remote:
         clear_remote_history(config)
     elif args.once:
