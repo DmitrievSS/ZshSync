@@ -1,15 +1,17 @@
 # ZshSync
 
-A tool for synchronizing zsh command history between different machines using Git.
+A tool for synchronizing zsh command history between different machines using Git or SSH.
 
 ## Features
 
 - Synchronize command history between different machines
-- Git backend support for history storage
+- Multiple synchronization strategies:
+  - Git backend for version-controlled history storage
+  - SSH for direct machine-to-machine synchronization
 - Daemon mode with configurable sync interval
 - One-time synchronization capability
 - Remote history clearing
-- Flexible configuration via config.ini
+- Flexible configuration via config.yaml
 
 ## Project Structure
 
@@ -25,11 +27,13 @@ history_syncer/
 │   ├── __init__.py
 │   ├── base.py                # Base strategy class
 │   ├── git.py                 # Git strategy
+│   ├── git_utils.py           # Git utilities
+│   ├── ssh.py                 # SSH strategy
 │   ├── memory.py              # Memory strategy
 │   └── factory.py             # Strategy factory
 ├── cli.py                     # Command line argument parsing
 ├── config.py                  # Configuration
-├── config.ini                 # Configuration file
+├── config.yaml               # Configuration file
 ├── history_syncer.py          # Main script
 └── README.md                  # Documentation
 ```
@@ -47,23 +51,30 @@ cd history_syncer
 pip install -r requirements.txt
 ```
 
-3. Configure in `config.ini`:
-```ini
-[Paths]
-local_history = ~/.zsh_history
-remote_history = ~/.zsh_history_sync
-git_repo = ~/.zsh_history_git
-log_file = ~/.history_syncer/history_syncer.log
-pid_file = ~/.history_syncer/history_syncer.pid
+3. Configure in `config.yaml`:
+```yaml
+paths:
+  local_history: ~/.zsh_history
+  remote_history: .zsh_history_git/history.txt
+  git_repo: .zsh_history_git
+  log_file: ~/.history_syncer/history_syncer.log
+  pid_file: ~/.history_syncer/history_syncer.pid
 
-[Settings]
-sync_interval_seconds = 3600
-sync_type = git
+settings:
+  sync_interval_seconds: 3600
+  sync_type: git  # or 'ssh' for SSH strategy
 
-[Git]
-repository_url = git@github.com:username/zsh_history.git
-branch = main
-remote_name = origin
+git:
+  repository_url: git@github.com:username/zsh_history.git
+  branch: main
+  remote_name: origin
+
+ssh:
+  host: remote.example.com
+  port: 22
+  username: user
+  remote_path: ~/.zsh_history
+  lock_file: zsh_sync_lock.lock
 ```
 
 ## Usage
@@ -71,37 +82,37 @@ remote_name = origin
 ### Start Daemon
 
 ```bash
-history_syncer
+python history_syncer.py
 ```
 
 ### One-time Synchronization
 
 ```bash
-history_syncer --once
+python history_syncer.py --once
 ```
 
 ### Stop Daemon
 
 ```bash
-history_syncer --stop
+python history_syncer.py --stop
 ```
 
 ### Restart Daemon
 
 ```bash
-history_syncer --restart
+python history_syncer.py --restart
 ```
 
 ### Clear Remote History
 
 ```bash
-history_syncer --clear-remote
+python history_syncer.py --clear-remote
 ```
 
 ### Specify Configuration File
 
 ```bash
-history_syncer --config /path/to/config.ini
+python history_syncer.py --config /path/to/config.yaml
 ```
 
 ## Configuration
@@ -110,20 +121,44 @@ history_syncer --config /path/to/config.ini
 
 - `local_history`: path to local history file
 - `remote_history`: path to remote history file
-- `git_repo`: path to Git repository
+- `git_repo`: path to Git repository (for Git strategy)
 - `log_file`: path to log file
 - `pid_file`: path to PID file
 
 ### Settings
 
 - `sync_interval_seconds`: synchronization interval in seconds
-- `sync_type`: synchronization type (git/memory)
+- `sync_type`: synchronization type (git/ssh)
 
-### Git Settings
+### Git Strategy Settings
+
+The Git strategy provides version-controlled history synchronization using a Git repository:
 
 - `repository_url`: Git repository URL
 - `branch`: branch for synchronization
 - `remote_name`: remote repository name
+
+Key features:
+- Automatic history merging with conflict resolution
+- Version control of history changes
+- Support for multiple machines through Git branches
+- Automatic duplicate removal and timestamp-based sorting
+
+### SSH Strategy Settings
+
+The SSH strategy enables direct machine-to-machine synchronization:
+
+- `host`: remote machine hostname
+- `port`: SSH port
+- `username`: SSH username
+- `remote_path`: path to history file on remote machine
+- `lock_file`: lock file name for synchronization
+
+Key features:
+- Direct synchronization between machines
+- File-level locking for concurrent access prevention
+- No intermediate storage required
+- Real-time synchronization
 
 ## Logging
 
@@ -134,7 +169,10 @@ Logs are saved to the file specified in the configuration (`log_file`). By defau
 ### Adding a New Sync Strategy
 
 1. Create a new class in `sync_strategies/` inheriting from `HistorySyncStrategy`
-2. Implement required methods
+2. Implement required methods:
+   - `read_remote_history()`
+   - `write_remote_history()`
+   - Any strategy-specific helper methods
 3. Add the strategy to `STRATEGIES` in `sync_strategies/factory.py`
 
 ### Testing
@@ -145,18 +183,21 @@ python -m pytest tests/
 
 ## Features
 
+- Multiple synchronization strategies (Git, SSH)
 - Automatic history merging between machines with duplicate removal
 - Automatic conflict resolution while preserving all commands
 - History sorting by timestamps
 - Support for various file encodings
 - All operations are logged to `history_syncer.log`
+- File-level locking for concurrent access prevention
+- Version control support through Git strategy
 
 ## Requirements
 
 - Python 3.9 or higher
-- Git
+- Git (for Git strategy)
+- SSH access (for SSH strategy)
 - zsh
-- SSH access to GitHub (for remote synchronization)
 
 ## Dependencies
 
