@@ -12,6 +12,8 @@ A tool for synchronizing zsh command history between different machines using Gi
 - One-time synchronization capability
 - Remote history clearing
 - Flexible configuration via config.yaml
+- Simple bash wrapper for easy usage
+- Global command availability
 
 ## Project Structure
 
@@ -35,6 +37,8 @@ history_syncer/
 ├── config.py                  # Configuration
 ├── config.yaml               # Configuration file
 ├── history_syncer.py          # Main script
+├── zsh_sync                  # Bash wrapper script
+├── install.sh                # Installation script
 └── README.md                  # Documentation
 ```
 
@@ -46,10 +50,17 @@ git clone https://github.com/yourusername/history_syncer.git
 cd history_syncer
 ```
 
-2. Install dependencies:
+2. Run the installation script:
 ```bash
-pip install -r requirements.txt
+./install.sh
 ```
+
+This will:
+- Create a symlink in `~/.local/bin`
+- Add `~/.local/bin` to your PATH if not already present
+- Make the script executable
+
+After installation, you can use `zsh_sync` from any directory.
 
 3. Configure in `config.yaml`:
 ```yaml
@@ -79,40 +90,42 @@ ssh:
 
 ## Usage
 
+The tool provides a simple bash wrapper that handles all the Python environment setup automatically.
+
 ### Start Daemon
 
 ```bash
-python history_syncer.py
+zsh_sync
 ```
 
 ### One-time Synchronization
 
 ```bash
-python history_syncer.py --once
+zsh_sync --once
 ```
 
 ### Stop Daemon
 
 ```bash
-python history_syncer.py --stop
+zsh_sync --stop
 ```
 
 ### Restart Daemon
 
 ```bash
-python history_syncer.py --restart
+zsh_sync --restart
 ```
 
 ### Clear Remote History
 
 ```bash
-python history_syncer.py --clear-remote
+zsh_sync --clear-remote
 ```
 
 ### Specify Configuration File
 
 ```bash
-python history_syncer.py --config /path/to/config.yaml
+zsh_sync --config /path/to/config.yaml
 ```
 
 ## Configuration
@@ -178,7 +191,7 @@ Logs are saved to the file specified in the configuration (`log_file`). By defau
 ### Testing
 
 ```bash
-python -m pytest tests/
+python3 -m pytest tests/
 ```
 
 ## Features
@@ -191,6 +204,8 @@ python -m pytest tests/
 - All operations are logged to `history_syncer.log`
 - File-level locking for concurrent access prevention
 - Version control support through Git strategy
+- Simple bash wrapper for easy usage
+- Global command availability
 
 ## Requirements
 
@@ -201,6 +216,7 @@ python -m pytest tests/
 
 ## Dependencies
 
-- GitPython==3.1.41
+- GitPython==3.1.42
+- PyYAML==6.0.1
 - python-daemon==3.0.1
 - pytest==8.0.0 (for tests)

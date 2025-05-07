@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# Get the directory where the script is located
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )"
+
+# Get the original project directory (where the symlink points to)
+PROJECT_DIR="$( cd "$( dirname "$( readlink -f "$0" )" )" &> /dev/null && pwd )"
+
+# Function to activate virtual environment
+activate_venv() {
+    if [ -d "$PROJECT_DIR/venv" ]; then
+        source "$PROJECT_DIR/venv/bin/activate"
+    else
+        echo "Virtual environment not found. Creating..."
+        python3 -m venv "$PROJECT_DIR/venv"
+        source "$PROJECT_DIR/venv/bin/activate"
+        python3 -m pip install -r "$PROJECT_DIR/requirements.txt"
+    fi
+}
+
+# Function to handle errors
+handle_error() {
+    echo "Error: $1" >&2
+    exit 1
+}
+
+# Main script logic
+main() {
+    # Change to the project directory
+    cd "$PROJECT_DIR" || handle_error "Failed to change to project directory"
+
+    # Activate virtual environment
+    activate_venv || handle_error "Failed to activate virtual environment"
+
+    # Execute the Python script with all arguments
+    python3 "$PROJECT_DIR/history_syncer.py" "$@"
+}
+
+# Run the main function
+main "$@" 
