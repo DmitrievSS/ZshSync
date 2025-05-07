@@ -11,34 +11,26 @@ from sync_strategies.factory import create_sync_strategy
 from .sync_utils import sync_history
 
 def get_pid_file_path(config: Config) -> str:
-    """Returns path to PID file"""
-    return config.get_path(config.paths.pid_file)
+    """Получает путь к PID файлу"""
+    return os.path.expanduser(config.pid_file_path)
 
 def is_daemon_running(config: Config) -> bool:
-    """Checks if daemon is running"""
+    """Проверяет, запущен ли демон"""
     pid_file = get_pid_file_path(config)
+    if not os.path.exists(pid_file):
+        return False
     
     try:
-        pidlock = daemon.pidfile.PIDLockFile(pid_file)
+        with open(pid_file, 'r') as f:
+            pid = int(f.read().strip())
         
-        # Check if PID file is locked
-        if pidlock.is_locked():
-            pid = pidlock.read_pid()
-            if pid is not None:
-                try:
-                    # Check if process exists
-                    os.kill(pid, 0)
-                    return True
-                except OSError:
-                    # Process doesn't exist, clear PID file
-                    try:
-                        pidlock.break_lock()
-                    except Exception:
-                        pass
-                    return False
-        return False
-    except Exception as e:
-        logging.error(f"Error checking daemon status: {e}")
+        # Проверяем, существует ли процесс с таким PID
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    except (ValueError, IOError):
         return False
 
 def write_pid_file(config: Config):
@@ -53,27 +45,6 @@ def remove_pid_file(config: Config):
     if os.path.exists(pid_file):
         os.remove(pid_file)
 
-def daemon_process(config: Config):
-    """Daemon process"""
-    try:
-        # Set up logging for new process
-        from history_syncer import setup_logging
-        setup_logging()
-        logging.info("Starting daemon process...")
-        
-        # Write PID
-        pid = os.getpid()
-        with open(get_pid_file_path(config), 'w') as f:
-            f.write(str(pid))
-        
-        # Start main daemon loop
-        run_daemon(config)
-    except Exception as e:
-        logging.error(f"Critical error in daemon: {e}")
-        if os.path.exists(get_pid_file_path(config)):
-            os.remove(get_pid_file_path(config))
-        raise
-
 def stop_daemon(config: Config):
     """Stops the daemon"""
     pid_file = get_pid_file_path(config)
@@ -84,7 +55,7 @@ def stop_daemon(config: Config):
             pid = pidlock.read_pid()
             if pid is not None:
                 try:
-                    os.kill(pid, 15)  # SIGTERM
+                    os.kill(pid, signal.SIGTERM)
                     logging.info(f"Sent stop signal to process {pid}")
                     
                     # Wait for process to terminate
@@ -117,32 +88,75 @@ def stop_daemon(config: Config):
         return False
 
 def run_daemon(config: Config):
-    """Runs synchronizer in daemon mode"""
+    """Запускает демон синхронизации"""
+    if is_daemon_running(config):
+        logging.warning("Демон уже запущен")
+        return False
+
+    # Создаем директории для PID и лог файлов
+    pid_file = get_pid_file_path(config)
+    pid_dir = os.path.dirname(pid_file)
+    os.makedirs(pid_dir, exist_ok=True)
+
+    log_dir = os.path.dirname(os.path.expanduser(config.log_file_path))
+    os.makedirs(log_dir, exist_ok=True)
+
+    # Открываем лог файл
+    log_file = os.path.expanduser(config.log_file_path)
+    log_fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
+
+    def log_message(message):
+        timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        os.write(log_fd, f"{timestamp} - {message}\n".encode())
+        os.fsync(log_fd)  # Force write to disk
+
+    # Настраиваем обработчики сигналов
+    def handle_sigterm(signo, frame):
+        log_message("Received SIGTERM, shutting down...")
+        os.close(log_fd)
+        remove_pid_file(config)
+        sys.exit(0)
+
+    # Создаем контекст демона
+    context = daemon.DaemonContext(
+        working_directory=os.path.expanduser('~'),
+        umask=0o022,
+        pidfile=daemon.pidfile.PIDLockFile(pid_file),
+        files_preserve=[log_fd],
+        signal_map={
+            signal.SIGTERM: handle_sigterm,
+            signal.SIGINT: handle_sigterm
+        }
+    )
+
     try:
-        if is_daemon_running(config):
-            logging.error("Daemon is already running")
-            return
-        
-        logging.info("Starting synchronizer in daemon mode...")
-        
-        # Create sync strategy
-        logging.info("Creating sync strategy...")
-        strategy = create_sync_strategy(config)
-        
-        logging.info("Starting main daemon loop...")
-        while True:
-            try:
-                logging.info("Starting sync cycle")
-                sync_history(config, strategy)
-                logging.info("Sync completed successfully")
-            except Exception as e:
-                logging.error(f"Error during sync: {e}")
-            
-            logging.info(f"Waiting {config.settings.sync_interval_seconds} seconds...")
-            time.sleep(config.settings.sync_interval_seconds)
+        # Запускаем демон
+        with context:
+            log_message("Daemon started")
+            write_pid_file(config)
+
+            # Создаем стратегию синхронизации
+            strategy = create_sync_strategy(config)
+
+            # Основной цикл демона
+            while True:
+                try:
+                    log_message("Starting sync cycle")
+                    sync_history(config, strategy)
+                    log_message("Sync completed successfully")
+                except Exception as e:
+                    log_message(f"Unexpected error during sync: {str(e)}")
+
+                log_message(f"Waiting {config.sync_interval_seconds} seconds...")
+                time.sleep(config.sync_interval_seconds)
+
+        return True
     except Exception as e:
-        logging.error(f"Critical error in daemon: {e}")
-        raise
+        logging.error(f"Error starting daemon: {e}")
+        import traceback
+        traceback.print_exc()
+        remove_pid_file(config)
+        return False
 
 def restart_daemon(config: Config):
     """Restarts the daemon"""
@@ -153,63 +167,5 @@ def restart_daemon(config: Config):
             return False
         # Give time for process to terminate
         time.sleep(1)
-    
-    try:
-        # Set up daemon context
-        log_dir = os.path.expanduser('~/.history_syncer')
-        os.makedirs(log_dir, exist_ok=True)
-        
-        log_file = os.path.join(log_dir, 'history_syncer.log')
-        pid_file = get_pid_file_path(config)
-        
-        # Open log file
-        log_fd = os.open(log_file, os.O_WRONLY | os.O_CREAT | os.O_APPEND)
-        
-        def log_message(message):
-            timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-            os.write(log_fd, f"{timestamp} - {message}\n".encode())
-            os.fsync(log_fd)  # Force write to disk
-        
-        # Set up signal handlers
-        def handle_sigterm(signo, frame):
-            log_message("Received SIGTERM, shutting down...")
-            os.close(log_fd)
-            sys.exit(0)
-        
-        # Create daemon context
-        context = daemon.DaemonContext(
-            working_directory=os.path.expanduser('~'),
-            umask=0o022,
-            pidfile=daemon.pidfile.PIDLockFile(pid_file),
-            files_preserve=[log_fd],
-            signal_map={
-                signal.SIGTERM: handle_sigterm,
-                signal.SIGINT: handle_sigterm
-            }
-        )
-        
-        # Start daemon
-        with context:
-            log_message("Daemon started")
-            
-            # Create sync strategy
-            strategy = create_sync_strategy(config)
-            
-            # Main daemon loop
-            while True:
-                try:
-                    log_message("Starting sync cycle")
-                    sync_history(config, strategy)
-                    log_message("Sync completed successfully")
-                except Exception as e:
-                    log_message(f"Unexpected error during sync: {str(e)}")
-                
-                log_message(f"Waiting {config.settings.sync_interval_seconds} seconds...")
-                time.sleep(config.settings.sync_interval_seconds)
-        
-        return True
-    except Exception as e:
-        print(f"Error starting daemon: {e}")
-        import traceback
-        traceback.print_exc()
-        return False 
+
+    return run_daemon(config) 

@@ -13,10 +13,14 @@ class MemoryHistorySyncStrategy(HistorySyncStrategy):
         """Чтение удаленной истории"""
         return self.history.copy()
     
-    def write_remote_history(self, history: List[str]):
-        """Запись удаленной истории"""
-        self.history = history.copy()
-    
-    def commit_changes(self, message: str):
-        """Сохранение изменений (в памяти ничего не делаем)"""
+    def write_remote_history(self, new_history: list):
+        """Записывает удаленную историю"""
+        self.history = new_history
+
+    def clear_remote_history(self):
+        """Очищает удаленную историю"""
+        self.history = []
+
+    def cleanup(self):
+        """Очищает ресурсы стратегии"""
         pass 

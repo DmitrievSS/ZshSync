@@ -1,128 +1,109 @@
 import os
-import configparser
-from pathlib import Path
-from dataclasses import dataclass, field
-from typing import Optional
+import yaml
 import logging
+from typing import Dict, Any, Optional
 
-@dataclass
-class PathsConfig:
-    """Конфигурация путей"""
-    local_history: str
-    remote_history: str
-    git_repo: str
-    log_file: str = '~/.history_syncer/history_syncer.log'
-    pid_file: str = '~/.history_syncer/history_syncer.pid'
-
-@dataclass
-class SettingsConfig:
-    """Конфигурация общих настроек"""
-    sync_interval_seconds: int = 3600  # 1 час по умолчанию
-    sync_type: str = 'git'  # тип синхронизации по умолчанию
-
-@dataclass
-class GitConfig:
-    """Конфигурация git"""
-    repository_url: Optional[str] = None
-    branch: str = 'main'
-    remote_name: str = 'origin'
-
-@dataclass
 class Config:
-    """Основной класс конфигурации"""
-    paths: PathsConfig = field(default_factory=PathsConfig)
-    settings: SettingsConfig = field(default_factory=SettingsConfig)
-    git: GitConfig = field(default_factory=GitConfig)
-    
-    def __init__(self, config_path: str = 'config.ini'):
-        self.config_path = config_path
-        logging.info(f"Инициализация Config с путем: {self.config_path}")
-        
-        self.paths = PathsConfig(
-            local_history='~/.zsh_history',
-            remote_history='history.txt',
-            git_repo='~/.zsh_history_git',
-            log_file='~/.history_syncer/history_syncer.log',
-            pid_file='~/.history_syncer/history_syncer.pid'
-        )
-        logging.info(f"Пути по умолчанию: {self.paths}")
-        
-        self.settings = SettingsConfig()
-        self.git = GitConfig()
-        self._load_or_create_config()
-    
-    def _load_or_create_config(self):
-        """Загружает существующий конфиг или создает новый с настройками по умолчанию"""
-        if os.path.exists(self.config_path):
-            self._load_config()
-        else:
-            self._create_default_config()
-    
-    def _create_default_config(self):
-        """Создает конфигурационный файл с настройками по умолчанию"""
-        config = configparser.ConfigParser()
-        
-        # Сохраняем текущие значения в конфиг
-        config['Paths'] = {
-            'local_history': self.paths.local_history,
-            'remote_history': self.paths.remote_history,
-            'git_repo': self.paths.git_repo,
-            'log_file': self.paths.log_file,
-            'pid_file': self.paths.pid_file
-        }
-        config['Settings'] = {
-            'sync_interval_seconds': str(self.settings.sync_interval_seconds),
-            'sync_type': self.settings.sync_type
-        }
-        config['Git'] = {
-            'repository_url': self.git.repository_url or '',
-            'branch': self.git.branch,
-            'remote_name': self.git.remote_name
-        }
-        
-        # Создаем директорию для конфига, если её нет
-        config_dir = os.path.dirname(self.config_path)
-        if config_dir and not os.path.exists(config_dir):
-            os.makedirs(config_dir)
-        
-        with open(self.config_path, 'w') as f:
-            config.write(f)
-    
-    def _load_config(self):
-        """Загружает конфигурацию из файла"""
-        config = configparser.ConfigParser()
-        config.read(self.config_path)
-        
-        # Загружаем пути
-        self.paths.local_history = config.get('Paths', 'local_history', 
-                                            fallback=self.paths.local_history)
-        self.paths.remote_history = config.get('Paths', 'remote_history', 
-                                             fallback=self.paths.remote_history)
-        self.paths.git_repo = config.get('Paths', 'git_repo', 
-                                        fallback=self.paths.git_repo)
-        self.paths.log_file = config.get('Paths', 'log_file',
-                                       fallback=self.paths.log_file)
-        self.paths.pid_file = config.get('Paths', 'pid_file',
-                                       fallback=self.paths.pid_file)
-        
-        # Загружаем настройки
-        self.settings.sync_interval_seconds = config.getint('Settings', 'sync_interval_seconds', 
-                                                          fallback=self.settings.sync_interval_seconds)
-        self.settings.sync_type = config.get('Settings', 'sync_type', 
-                                           fallback=self.settings.sync_type)
-        
-        # Загружаем git настройки
-        self.git.repository_url = config.get('Git', 'repository_url', 
-                                           fallback=self.git.repository_url)
-        self.git.branch = config.get('Git', 'branch', 
-                                   fallback=self.git.branch)
-        self.git.remote_name = config.get('Git', 'remote_name', 
-                                        fallback=self.git.remote_name)
-    
-    def save(self):
-        """Сохраняет текущую конфигурацию в файл"""
-        self._create_default_config()
-    
+    """Класс для работы с конфигурацией"""
+
+    def __init__(self, config_path: str = 'config.yaml'):
+        """
+        Инициализация конфигурации
+        Args:
+            config_path: путь к файлу конфигурации
+        """
+        self.config_path = os.path.expanduser(config_path)
+        self.config = self._load_config()
+
+    def _load_config(self) -> Dict[str, Any]:
+        """
+        Загрузка конфигурации из файла
+        Returns:
+            Dict: словарь с конфигурацией
+        """
+        try:
+            with open(self.config_path, 'r') as f:
+                config = yaml.safe_load(f)
+                logging.info(f"Используется конфигурационный файл: {self.config_path}")
+                return config
+        except FileNotFoundError:
+            logging.error(f"Файл конфигурации не найден: {self.config_path}")
+            raise
+        except yaml.YAMLError as e:
+            logging.error(f"Ошибка при чтении файла конфигурации: {e}")
+            raise
+
+    @property
+    def sync_type(self) -> str:
+        """Тип синхронизации (git/ssh)"""
+        return self.config.get('settings', {}).get('sync_type', 'git')
+
+    @property
+    def sync_interval_seconds(self) -> int:
+        """Интервал синхронизации в секундах"""
+        return self.config.get('sync_interval_seconds', 3600)
+
+    @property
+    def local_history_path(self) -> str:
+        """Путь к локальному файлу истории"""
+        return os.path.expanduser(self.config['paths']['local_history'])
+
+    @property
+    def remote_history_path(self) -> str:
+        """Путь к удаленному файлу истории"""
+        return self.config['paths']['remote_history']
+
+    @property
+    def git_repo_path(self) -> str:
+        """Путь к локальному git репозиторию"""
+        return os.path.expanduser(self.config['paths']['git_repo'])
+
+    @property
+    def log_file_path(self) -> str:
+        """Путь к файлу логов"""
+        return os.path.expanduser(self.config['paths']['log_file'])
+
+    @property
+    def pid_file_path(self) -> str:
+        """Путь к PID файлу"""
+        return os.path.expanduser(self.config['paths']['pid_file'])
+
+    @property
+    def git_config(self) -> Dict[str, Any]:
+        """Конфигурация для Git стратегии"""
+        return self.config.get('git', {})
+
+    @property
+    def ssh_config(self) -> Dict[str, Any]:
+        """Конфигурация для SSH стратегии"""
+        return self.config.get('ssh', {})
+
+    def get_git_param(self, param: str, default: Optional[Any] = None) -> Any:
+        """
+        Получение параметра Git конфигурации
+        Args:
+            param: имя параметра
+            default: значение по умолчанию
+        Returns:
+            Any: значение параметра
+        """
+        git_config = self.config.get('git', {})
+        value = git_config.get(param, default)
+        if value is None:
+            logging.error(f"Git parameter '{param}' not found in config")
+        return value
+
+    def get_ssh_param(self, param: str, default: Optional[Any] = None) -> Any:
+        """
+        Получение параметра SSH конфигурации
+        Args:
+            param: имя параметра
+            default: значение по умолчанию
+        Returns:
+            Any: значение параметра
+        """
+        return self.ssh_config.get(param, default)
+
     def get_path(self, path: str) -> str:
         """Получает путь и расширяет ~ до домашней директории"""
         if not path:
@@ -134,7 +115,7 @@ class Config:
         
         # Если путь относительный, делаем его абсолютным относительно git_repo
         if not os.path.isabs(expanded_path):
-            git_repo_path = os.path.expanduser(self.paths.git_repo)
+            git_repo_path = os.path.expanduser(self.git_repo_path)
             expanded_path = os.path.join(git_repo_path, expanded_path)
             logging.info(f"Относительный путь преобразован в абсолютный: {expanded_path}")
         
